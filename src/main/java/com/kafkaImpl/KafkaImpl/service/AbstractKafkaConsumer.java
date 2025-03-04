@@ -43,63 +43,70 @@ public abstract class AbstractKafkaConsumer implements Runnable {
         return props;
     }
 
+
+    //NEW LOGIC - process certain amount of messages as batches
+    //we can pass multiple partition for single consumer also as takes map of partition limits and assigns consumer manually
     @Override
     public void run() {
-
         try {
+            //always running stops only when stop method called via stop endpoint
             while (running) {
-                ConsumerRecords<String, String> records = consumer.poll(Duration.ofMillis(100));
+                // Fetch messages from Kafka every 1 second
+                ConsumerRecords<String, String> records = consumer.poll(Duration.ofMillis(1000));
 
+                // Map to store partition-wise batched messages
+                Map<Integer, List<ConsumerRecord<String, String>>> partitionBatches = new HashMap<>();
+
+                // Iterate through all fetched records -> message collection and batch creation
                 for (ConsumerRecord<String, String> record : records) {
-                    int partition = record.partition();// Get the partition of the current record
+                    int partition = record.partition(); // Get the partition of the message
 
-                    // If partition is not in the tracking map, ignore it
-                    if (!partitionLimits.containsKey(partition)) continue;
+                    // Retrieve the processing limit for this partition; if not set, use a high default value
+                    int limit = partitionLimits.getOrDefault(partition, Integer.MAX_VALUE);
 
-                    int currentCount = partitionMessageCount.getOrDefault(partition, 0);
+                    // if list does not exist for particular partition then it is created
+                    partitionBatches.putIfAbsent(partition, new ArrayList<>());
 
-                    // If the count exceeds the defined limit for this partition, skip processing
-                    if (currentCount >= partitionLimits.get(partition)) continue; // Skip if limit reached
-
-
-                    processMessage(record);
-
-                    // Update the count of messages processed for this partition
-                    partitionMessageCount.put(partition, currentCount + 1);
-
-                    // Manually commit the offset for the processed message
-                    consumer.commitSync(Collections.singletonMap(
-                            new TopicPartition(topic, partition),
-                            new OffsetAndMetadata(record.offset() + 1)
-                    ));
-
-
-                    // If the partition has reached its message processing limit, pause it
-                    if (partitionMessageCount.get(partition) >= partitionLimits.get(partition)) {
-                        System.out.println("Pausing partition " + partition);
-                        consumer.pause(Collections.singleton(new TopicPartition(topic, partition)));
+                    // Messages are added only if the partition has not exceeded its processing limit
+                    //ensures once partition batch reaches its limit, additional messages are ignored in current poll cycle
+                    //ignored messages remain in kafka topic and will be fetched in next poll.
+                    if (partitionBatches.get(partition).size() < limit) {
+                        partitionBatches.get(partition).add(record);
                     }
                 }
 
-                // Check if all partitions have reached their respective limits
-                boolean allPartitionsPaused = partitionMessageCount.entrySet().stream()
-                        .allMatch(entry -> entry.getValue() >= partitionLimits.get(entry.getKey()));
+                // Process messages partition-wise for a particular batch
+                for (Integer partition : partitionBatches.keySet()) {
+                    //get message for particular partition if multiple partition passed in one consumer
+                    List<ConsumerRecord<String, String>> batch = partitionBatches.get(partition);
 
-                // If all partitions have reached their limits, stop the consumer gracefully
-                if (allPartitionsPaused) {
-                    System.out.println("All partitions reached limit. Stopping consumer.");
-                    running = false; // Break out of the while loop
+                    // Process each message in the batch
+                    for (ConsumerRecord<String, String> record : batch) {
+                        processMessage(record);
+                    }
+
+                    // Commit offsets after processing the batch
+                    if (!batch.isEmpty()) { // Ensure there's at least one message before committing
+                        long lastOffset = batch.get(batch.size() - 1).offset(); // Get the last message offset
+
+                        // Manually commit the offset for the last processed message
+                        consumer.commitSync(Collections.singletonMap(
+                                new TopicPartition(topic, partition),
+                                new OffsetAndMetadata(lastOffset + 1)
+                        ));
+                    }
                 }
+
             }
         } catch (Exception e) {
-            System.err.println("Consumer encountered an error: " + e.getMessage());
-            e.printStackTrace();
+            System.err.println("Consumer error: " + e.getMessage()); // Log any errors
+            e.printStackTrace(); // Print stack trace for debugging
         } finally {
-            // Ensure consumer is closed to release resources
-            consumer.close();
-            System.out.println("Consumer stopped.");
+            consumer.close(); // Ensure consumer is closed to release resources
+            System.out.println("Consumer stopped."); // Log consumer shutdown
         }
     }
+
 
     protected abstract void processMessage(ConsumerRecord<String, String> record);
 
