@@ -1,9 +1,9 @@
 package com.kafkaImpl.KafkaImpl.controller;
 
 //import com.kafkaImpl.KafkaImpl.service.KafkaConsumer;
-import com.kafkaImpl.KafkaImpl.service.KafkaConsumerManager;
+import com.kafkaImpl.KafkaImpl.service.KafkaConsumerManagerService;
 
-import com.kafkaImpl.KafkaImpl.service.KafkaProducer;
+import com.kafkaImpl.KafkaImpl.service.KafkaProducerService;
 import lombok.AllArgsConstructor;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
@@ -19,14 +19,23 @@ import org.springframework.web.bind.annotation.*;
 public class KafkaController {
 
     @Autowired
-    private final KafkaProducer producer;
+    private final KafkaProducerService producer;
 
    @Autowired
-   private final KafkaConsumerManager consumerManager;
+   private final KafkaConsumerManagerService consumerManager;
 
     @PostMapping("/send/{userId}/{message}")
     public CompletableFuture<ResponseEntity<String>> sendMessage(@PathVariable String userId, @PathVariable String message) {
         return producer.sendMessage(userId, message);
+    }
+
+    @PostMapping("/publish-test-messages")
+    public ResponseEntity<String> publishTestMessages() {
+        producer.sendMessages("user1", 50);
+        producer.sendMessages("user2", 75);
+        producer.sendMessages("user3", 100);
+
+        return ResponseEntity.ok("Test messages sent successfully.");
     }
 
     @PostMapping("/start")

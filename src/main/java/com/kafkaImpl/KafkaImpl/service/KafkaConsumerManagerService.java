@@ -4,7 +4,7 @@ import org.springframework.stereotype.Service;
 import java.util.*;
 
 @Service
-public class KafkaConsumerManager {
+public class KafkaConsumerManagerService {
 
     // List to track active consumers
     private final List<AbstractKafkaConsumer> consumers = new ArrayList<>();
@@ -15,8 +15,8 @@ public class KafkaConsumerManager {
 
         // Define partition limits
         Map<Integer, Integer> partitionLimits1 = Map.of(0, 4);
-        Map<Integer, Integer> partitionLimits2 = Map.of(1, 3);
-        Map<Integer, Integer> partitionLimits3 = Map.of(2, 5);
+        Map<Integer, Integer> partitionLimits2 = Map.of(1, 2);
+        Map<Integer, Integer> partitionLimits3 = Map.of(2, 3);
 
         // Create consumer instances
         LoggingKafkaConsumer consumer1 = new LoggingKafkaConsumer(topic, partitionLimits1);

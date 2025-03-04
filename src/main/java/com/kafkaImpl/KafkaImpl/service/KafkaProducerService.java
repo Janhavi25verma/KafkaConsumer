@@ -11,7 +11,7 @@ import java.util.concurrent.CompletableFuture;
 
 @Service
 @AllArgsConstructor
-public class KafkaProducer {
+public class KafkaProducerService {
 
     @Autowired
     private final KafkaTemplate<String, String> kafkaTemplate;
@@ -31,6 +31,16 @@ public class KafkaProducer {
             }
         });
     }
+
+    //PUBLISH multiple messages for 3 user in 3 partition for testing
+    public void sendMessages(String userId, int count) {
+        int partition = getPartition(userId); // Use custom hashing for partitioning
+        for (int i = 1; i <= count; i++) {
+            String message = "Test message " + i + " for " + userId;
+            kafkaTemplate.send("Users", partition, userId, message);
+        }
+    }
+
 
     // Partitioning logic (hash-based)
     //if we randomly assign partition it can go to different partition
