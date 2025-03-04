@@ -109,8 +109,19 @@ public abstract class AbstractKafkaConsumer implements Runnable {
         }
     }
 
+    protected abstract void processMessage(ConsumerRecord<String, String> record);
 
+    public void stop() {
+        running = false;
+        try {
+            Thread.currentThread().join(); // Ensure the thread properly shuts down before restarting
+        } catch (InterruptedException e) {
+            System.err.println("Error stopping consumer: " + e.getMessage());
+        }
+    }
+}
 
+    // old implementation of run() method
 //    //ALL MESSAGES ARE FETCHED AT ONCE AND WHEN start consumer and then waits for new messages to arrive and does not processes already fetched messages
 //    @Override
 //    public void run() {
@@ -175,18 +186,7 @@ public abstract class AbstractKafkaConsumer implements Runnable {
 //    }
 
 
-    protected abstract void processMessage(ConsumerRecord<String, String> record);
 
-    public void stop() {
-        running = false;
-        try {
-            Thread.currentThread().join(); // Ensure the thread properly shuts down before restarting
-        } catch (InterruptedException e) {
-            System.err.println("Error stopping consumer: " + e.getMessage());
-        }
-    }
-
-}
 
 
 //package com.kafkaImpl.KafkaImpl.service;
