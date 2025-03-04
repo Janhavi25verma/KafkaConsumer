@@ -44,52 +44,52 @@ public abstract class AbstractKafkaConsumer implements Runnable {
     }
 
 
-    //NEW LOGIC - process certain amount of messages as batches
+    //NEW LOGIC - Fetch messages → Store in partition queues → Move to processedBatch →
+    // -> Process messages → Commit offset if processedBatch is not empty → Sleep → Repeat
+
     //we can pass multiple partition for single consumer also as takes map of partition limits and assigns consumer manually
     @Override
     public void run() {
         try {
-            //always running stops only when stop method called via stop endpoint
+            // partition queue map is used to queue messages for every partition that a single consumer handle :
+            // in our case we are using only one partition for one consumer
+            Map<Integer, Queue<ConsumerRecord<String, String>>> partitionQueues = new HashMap<>();
+            partitionLimits.keySet().forEach(p -> partitionQueues.put(p, new LinkedList<>()));
+
             while (running) {
-                // Fetch messages from Kafka every 1 second
+                // Fetch messages from Kafka every second
                 ConsumerRecords<String, String> records = consumer.poll(Duration.ofMillis(1000));
 
-                // Map to store partition-wise batched messages
-                Map<Integer, List<ConsumerRecord<String, String>>> partitionBatches = new HashMap<>();
-
-                // Iterate through all fetched records -> message collection and batch creation
+                // Store fetched messages into respective partition queues:
+                // here we have only one partition but we can have multiple partition too
                 for (ConsumerRecord<String, String> record : records) {
-                    int partition = record.partition(); // Get the partition of the message
-
-                    // Retrieve the processing limit for this partition; if not set, use a high default value
-                    int limit = partitionLimits.getOrDefault(partition, Integer.MAX_VALUE);
-
-                    // if list does not exist for particular partition then it is created
-                    partitionBatches.putIfAbsent(partition, new ArrayList<>());
-
-                    // Messages are added only if the partition has not exceeded its processing limit
-                    //ensures once partition batch reaches its limit, additional messages are ignored in current poll cycle
-                    //ignored messages remain in kafka topic and will be fetched in next poll.
-                    if (partitionBatches.get(partition).size() < limit) {
-                        partitionBatches.get(partition).add(record);
-                    }
+                    int partition = record.partition();
+                    partitionQueues.putIfAbsent(partition, new LinkedList<>());
+                    partitionQueues.get(partition).offer(record); // Add to queue
                 }
 
-                // Process messages partition-wise for a particular batch
-                for (Integer partition : partitionBatches.keySet()) {
-                    //get message for particular partition if multiple partition passed in one consumer
-                    List<ConsumerRecord<String, String>> batch = partitionBatches.get(partition);
+                // Process messages partition-wise
+                for (Integer partition : partitionQueues.keySet()) {
+                    Queue<ConsumerRecord<String, String>> queue = partitionQueues.get(partition);
+                    int limit = partitionLimits.getOrDefault(partition, Integer.MAX_VALUE);
+                    int count = 0;
 
-                    // Process each message in the batch
-                    for (ConsumerRecord<String, String> record : batch) {
-                        processMessage(record);
+                    //processedBatch is temporary → Created per cycle → Filled with processed messages → Used for committing offsets → Cleared automatically
+                    List<ConsumerRecord<String, String>> processedBatch = new ArrayList<>();
+
+                    // Process messages up to the limit
+                    while (!queue.isEmpty() && count < limit) {
+                        ConsumerRecord<String, String> record = queue.poll(); // Retrieve and remove the head of the queue
+                        if (record != null) {
+                            processMessage(record);
+                            processedBatch.add(record);
+                            count++;
+                        }
                     }
 
-                    // Commit offsets after processing the batch
-                    if (!batch.isEmpty()) { // Ensure there's at least one message before committing
-                        long lastOffset = batch.get(batch.size() - 1).offset(); // Get the last message offset
-
-                        // Manually commit the offset for the last processed message
+                    // Commit offsets for processed messages
+                    if (!processedBatch.isEmpty()) {
+                        long lastOffset = processedBatch.get(processedBatch.size() - 1).offset();
                         consumer.commitSync(Collections.singletonMap(
                                 new TopicPartition(topic, partition),
                                 new OffsetAndMetadata(lastOffset + 1)
@@ -97,15 +97,82 @@ public abstract class AbstractKafkaConsumer implements Runnable {
                     }
                 }
 
+                // Sleep for 1 second to maintain a steady message consumption cycle
+                Thread.sleep(1000);
             }
         } catch (Exception e) {
-            System.err.println("Consumer error: " + e.getMessage()); // Log any errors
-            e.printStackTrace(); // Print stack trace for debugging
+            System.err.println("Consumer error: " + e.getMessage());
+            e.printStackTrace();
         } finally {
-            consumer.close(); // Ensure consumer is closed to release resources
-            System.out.println("Consumer stopped."); // Log consumer shutdown
+            consumer.close();
+            System.out.println("Consumer stopped.");
         }
     }
+
+
+
+//    //ALL MESSAGES ARE FETCHED AT ONCE AND WHEN start consumer and then waits for new messages to arrive and does not processes already fetched messages
+//    @Override
+//    public void run() {
+//        try {
+//            //always running stops only when stop method called via stop endpoint
+//            while (running) {
+//                // Fetch messages from Kafka every 1 second
+//                ConsumerRecords<String, String> records = consumer.poll(Duration.ofMillis(1000));
+//                System.out.println("Fetched " + records.count() + " messages.");
+//
+//                // Map to store partition-wise batched messages
+//                Map<Integer, List<ConsumerRecord<String, String>>> partitionBatches = new HashMap<>();
+//
+//                // Iterate through all fetched records -> message collection and batch creation
+//                for (ConsumerRecord<String, String> record : records) {
+//                    int partition = record.partition(); // Get the partition of the message
+//
+//                    // Retrieve the processing limit for this partition; if not set, use a high default value
+//                    int limit = partitionLimits.getOrDefault(partition, Integer.MAX_VALUE);
+//
+//                    // if list does not exist for particular partition then it is created
+//                    partitionBatches.putIfAbsent(partition, new ArrayList<>());
+//
+//                    // Messages are added only if the partition has not exceeded its processing limit
+//                    //ensures once partition batch reaches its limit, additional messages are ignored in current poll cycle
+//                    //ignored messages remain in kafka topic and will be fetched in next poll.
+//                    if (partitionBatches.get(partition).size() < limit) {
+//                        partitionBatches.get(partition).add(record);
+//                    }
+//                }
+//
+//                // Process messages partition-wise for a particular batch
+//                for (Integer partition : partitionBatches.keySet()) {
+//                    //get message for particular partition if multiple partition passed in one consumer
+//                    List<ConsumerRecord<String, String>> batch = partitionBatches.get(partition);
+//
+//                    // Process each message in the batch
+//                    for (ConsumerRecord<String, String> record : batch) {
+//                        processMessage(record);
+//                    }
+//
+//                    // Commit offsets after processing the batch
+//                    if (!batch.isEmpty()) { // Ensure there's at least one message before committing
+//                        long lastOffset = batch.get(batch.size() - 1).offset(); // Get the last message offset
+//
+//                        // Manually commit the offset for the last processed message
+//                        consumer.commitSync(Collections.singletonMap(
+//                                new TopicPartition(topic, partition),
+//                                new OffsetAndMetadata(lastOffset + 1)
+//                        ));
+//                    }
+//                }
+//
+//            }
+//        } catch (Exception e) {
+//            System.err.println("Consumer error: " + e.getMessage()); // Log any errors
+//            e.printStackTrace(); // Print stack trace for debugging
+//        } finally {
+//            consumer.close(); // Ensure consumer is closed to release resources
+//            System.out.println("Consumer stopped."); // Log consumer shutdown
+//        }
+//    }
 
 
     protected abstract void processMessage(ConsumerRecord<String, String> record);
