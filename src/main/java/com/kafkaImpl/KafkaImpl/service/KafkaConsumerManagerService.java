@@ -6,6 +6,7 @@ import java.util.*;
 @Service
 public class KafkaConsumerManagerService {
 
+
     // List to track active consumers
     private final List<AbstractKafkaConsumer> consumers = new ArrayList<>();
     private final List<Thread> consumerThreads = new ArrayList<>();
@@ -54,18 +55,18 @@ public class KafkaConsumerManagerService {
        }
    }
     //HERE THREAD IS NAMED AS CLASS NAME BUT ALL THREEE THREADS ARE USING SAME CLASS SO WONT WORK
-//    private void createOrRestartThread(AbstractKafkaConsumer consumer) {
-//        Thread consumerThread = new Thread(consumer);
-//
-//        // Check if a thread is already running for this consumer
-//        boolean isThreadRunning = consumerThreads.stream()
-//                .anyMatch(thread -> thread.getName().equals(consumer.getClass().getSimpleName()) && thread.isAlive());
-//
-//        if (!isThreadRunning) {
-//            consumerThreads.add(consumerThread);
-//            consumerThread.start();
-//        }
-//    }
+    private void createOrRestartThread(AbstractKafkaConsumer consumer) {
+        Thread consumerThread = new Thread(consumer);
+
+        // Check if a thread is already running for this consumer
+        boolean isThreadRunning = consumerThreads.stream()
+                .anyMatch(thread -> thread.getName().equals(consumer.getClass().getSimpleName()) && thread.isAlive());
+
+        if (!isThreadRunning) {
+            consumerThreads.add(consumerThread);
+            consumerThread.start();
+        }
+    }
 
     public void stopConsumers() {
         consumers.forEach(AbstractKafkaConsumer::stop);

@@ -1,21 +1,28 @@
+
+
+
 package com.kafkaImpl.KafkaImpl.service;
 
 import org.apache.kafka.clients.consumer.ConsumerRecord;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 import java.util.Map;
 
 
 public class LoggingKafkaConsumer extends AbstractKafkaConsumer {
 
+
     public LoggingKafkaConsumer(String topic, Map<Integer, Integer> partitionLimits) {
         super(topic, partitionLimits);
-    }
 
+    }
+    long startTime = System.currentTimeMillis();
     @Override
     protected void processMessage(ConsumerRecord<String, String> record) {
-        System.out.println("Consumed from partition " + record.partition() + ": " + record.value());
+        System.out.println("Consumed from partition " + record.partition() + ": " + record.value() + " in " + ((System.currentTimeMillis() - startTime) / 1000) + " seconds");
     }
 }
+
 
 
 //package com.kafkaImpl.KafkaImpl.service;

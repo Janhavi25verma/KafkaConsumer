@@ -1,5 +1,6 @@
 package com.kafkaImpl.KafkaImpl.service;
 
+import lombok.Getter;
 import org.apache.kafka.clients.consumer.ConsumerRecords;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
@@ -14,6 +15,7 @@ public abstract class AbstractKafkaConsumer implements Runnable {
 
     private final KafkaConsumer<String, String> consumer;
     private final String topic;
+
     private final Map<Integer, Integer> partitionLimits;
     private final Map<Integer, Integer> partitionMessageCount = new HashMap<>();
     private volatile boolean running = true;
@@ -51,35 +53,31 @@ public abstract class AbstractKafkaConsumer implements Runnable {
     @Override
     public void run() {
         try {
-            // partition queue map is used to queue messages for every partition that a single consumer handle :
-            // in our case we are using only one partition for one consumer
             Map<Integer, Queue<ConsumerRecord<String, String>>> partitionQueues = new HashMap<>();
             partitionLimits.keySet().forEach(p -> partitionQueues.put(p, new LinkedList<>()));
 
+
             while (running) {
-                // Fetch messages from Kafka every second
+                long startTime = System.currentTimeMillis(); // Capture batch start time
+
                 ConsumerRecords<String, String> records = consumer.poll(Duration.ofMillis(1000));
 
-                // Store fetched messages into respective partition queues:
-                // here we have only one partition but we can have multiple partition too
+
                 for (ConsumerRecord<String, String> record : records) {
                     int partition = record.partition();
                     partitionQueues.putIfAbsent(partition, new LinkedList<>());
-                    partitionQueues.get(partition).offer(record); // Add to queue
+                    partitionQueues.get(partition).offer(record);
                 }
 
-                // Process messages partition-wise
                 for (Integer partition : partitionQueues.keySet()) {
                     Queue<ConsumerRecord<String, String>> queue = partitionQueues.get(partition);
                     int limit = partitionLimits.getOrDefault(partition, Integer.MAX_VALUE);
                     int count = 0;
 
-                    //processedBatch is temporary → Created per cycle → Filled with processed messages → Used for committing offsets → Cleared automatically
                     List<ConsumerRecord<String, String>> processedBatch = new ArrayList<>();
 
-                    // Process messages up to the limit
                     while (!queue.isEmpty() && count < limit) {
-                        ConsumerRecord<String, String> record = queue.poll(); // Retrieve and remove the head of the queue
+                        ConsumerRecord<String, String> record = queue.poll();
                         if (record != null) {
                             processMessage(record);
                             processedBatch.add(record);
@@ -87,7 +85,6 @@ public abstract class AbstractKafkaConsumer implements Runnable {
                         }
                     }
 
-                    // Commit offsets for processed messages
                     if (!processedBatch.isEmpty()) {
                         long lastOffset = processedBatch.get(processedBatch.size() - 1).offset();
                         consumer.commitSync(Collections.singletonMap(
@@ -97,8 +94,7 @@ public abstract class AbstractKafkaConsumer implements Runnable {
                     }
                 }
 
-                // Sleep for 1 second to maintain a steady message consumption cycle
-                Thread.sleep(1000);
+//                Thread.sleep(1000);
             }
         } catch (Exception e) {
             System.err.println("Consumer error: " + e.getMessage());
@@ -108,6 +104,7 @@ public abstract class AbstractKafkaConsumer implements Runnable {
             System.out.println("Consumer stopped.");
         }
     }
+
 
     protected abstract void processMessage(ConsumerRecord<String, String> record);
 
@@ -184,6 +181,8 @@ public abstract class AbstractKafkaConsumer implements Runnable {
 //            System.out.println("Consumer stopped."); // Log consumer shutdown
 //        }
 //    }
+
+
 
 
 
